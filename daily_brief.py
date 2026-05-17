@@ -481,7 +481,7 @@ final_img = img.convert('1')
 
 # Set PRINTER_NAME and FILENAME
 PRINTER_NAME = "Printer_POS_80"
-FILENAME     = os.path.join(SCRIPT_DIR, "daily.png")
+FILENAME     = os.path.join(SCRIPT_DIR, "daily_brief.png")
 
 # Save image
 final_img.save(FILENAME)
