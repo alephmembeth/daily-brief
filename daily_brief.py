@@ -4,9 +4,11 @@
 
 # Import standard libraries
 import datetime
+import glob
 import io
 import math
 import os
+import random
 import subprocess
 import textwrap
 import xml.etree.ElementTree as ET
@@ -47,6 +49,9 @@ ICAL_URLS = {
 
 # Set logo
 LOGO_URL = "https://cdn.prod.website-files.com/655bb8af26f2a1957ef8b0c9/67883e1b340fe8d60b9e6822_Risorsa%2012.svg"
+
+# Set vault path
+OBSIDIAN_VAULT = "VAULT PATH"
 
 # Calculate target date
 target_date = datetime.date.today()
@@ -251,6 +256,43 @@ def get_fact():
     except Exception:
         return []
 
+def get_vocabs(vault_path, count = 5):
+    """Fetches random vocabularies."""
+    all_cards = []
+    
+    # Search for markdown files starting with "Vokabeln"
+    search_path = os.path.join(vault_path, "**", "Vokabeln*.md")
+    files = glob.glob(search_path, recursive = True)
+    for file_path in files:
+        try:
+            with open(file_path, "r", encoding = "utf-8") as f:
+                content = f.read()
+            
+            # Check if the file contains the tag "Vokabeln_Altgriechisch"
+            if "Vokabeln_Altgriechisch" not in content:
+                continue
+            
+            # Clean and split content into non-empty lines
+            lines = [line.strip() for line in content.splitlines() if line.strip()]
+            
+            # Parse flashcards based on the separator "?"
+            for i in range(1, len(lines) - 1):
+                if lines[i] == "?":
+                    front = lines[i-1]
+                    back = lines[i+1]
+                    
+                    # Ignore headers and navigation
+                    if "|" in front or ">>" in front or "tags:" in front:
+                        continue
+                    all_cards.append({"front": front, "back": back})
+        except Exception:
+            pass
+    if not all_cards:
+        return []
+    
+    # Return random selection
+    return random.sample(all_cards, min(count, len(all_cards)))
+
 
 ########################################
 # DATA LOADING  AND HEIGHT CALCULATION #
@@ -263,6 +305,7 @@ evs      = get_events(ICAL_URLS, target_date)
 tasks    = get_tasks()
 news     = get_news()
 fact     = get_fact()
+vocabs   = get_vocabs(OBSIDIAN_VAULT, count = 5)
 
 # Calculate canvas height
 # (1) Header
@@ -283,8 +326,11 @@ news_h = sum(len(h) for h in news) * 32 + (len(news) * 15) + 100
 # (6) Fact
 fact_h = (len(fact) * 30 + 110) if fact else 0
 
+# (7) Vocabs
+vocabs_h = (len(vocabs) * 65 + 100) if vocab else 0
+
 # Total height
-total_h = header_h + weather_h + calendar_h + task_h + news_h + fact_h + 200
+total_h = header_h + weather_h + calendar_h + task_h + news_h + fact_h + vocabs_h + 200
 
 
 ###########
@@ -423,7 +469,29 @@ else:
     y_cursor += 45
     y_cursor += 20
 
-# (4) Tasks, (5) News, and (6) Fact
+# (4) Vocabs
+if vocabs:
+    
+    # Draw section header and divider line
+    draw.line((MARGIN, y_cursor, WIDTH - MARGIN, y_cursor), fill = 0, width = 3)
+    draw.text((MARGIN, y_cursor + 20), "VOKABELN", font = f_bold, fill = 0)
+    y_cursor += 65
+    
+    # Draw vocabularies
+    for card in vocabs:
+        
+        # Draw original
+        draw.text((MARGIN, y_cursor), f"• {card['front']}", font = f_bold, fill = 0)
+        y_cursor += 30
+        
+        # Draw translation
+        draw.text((MARGIN + 25, y_cursor), f"= {card['back']}", font = f_reg, fill = 0)
+        y_cursor += 35
+    
+    # Add spacing
+    y_cursor += 20
+
+# (5) Tasks, (6) News, and (7) Fact
 for title, data in [("AUFGABEN", tasks), ("NACHRICHTEN", news), ("WUSSTEST DU SCHON?", [fact] if fact else [])]:
     
     # Skip news and fact if empty
