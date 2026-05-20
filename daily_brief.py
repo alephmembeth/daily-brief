@@ -371,6 +371,7 @@ if logo_img:
         f"FETCH:  tasks ... OK ({len(tasks)} found)",
         "FETCH:  news ... OK",
         "FETCH:  fact ... OK",
+        "FETCH:  vocabularies ... OK",
         "STATUS: daily brief complete"
     ]
     
