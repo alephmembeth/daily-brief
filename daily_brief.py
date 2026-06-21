@@ -29,17 +29,19 @@ import resvg_py
 PREVIEW_MODE = True
 
 # Set folder
+# SCRIPT_DIR = os.getcwd()
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Set layout constants
-WIDTH = 512
-TIMELINE_X = 70
-MAX_NEWS = 7
-MAX_TASKS = 12
-CHAR_WIDTH = 35
+WIDTH      = 512
+TIMELINE_X =  70
+MAX_NEWS   =   7
+MAX_TASKS  =  12
+CHAR_WIDTH =  35
 
 # Set temperature range
-T_MIN, T_MAX = -10, 40
+T_MIN = -10
+T_MAX =  40
 
 # Set calendars
 ICAL_URLS = {
@@ -72,6 +74,64 @@ def get_logo(url, target_width = 160):
         # Check if request was successful
         if res.status_code == 200:
             
+            # Check if image is SVG
+            content_type = res.headers.get('Content-Type', '')
+            is_svg = 'svg' in content_type or url.split('?')[0].lower().endswith('.svg')
+            
+            if is_svg:
+                
+                # Convert SVG text to PNG bytes
+                img_data = resvg_py.svg_to_bytes(res.text)
+            
+            else:
+                
+                # Use bytes directly
+                img_data = res.content
+            
+            # Open image from bytes
+            img_original = Image.open(io.BytesIO(img_data))
+            
+            # Check if image has transparency
+            if img_original.mode == 'RGBA':
+                
+                # Create white background
+                background = Image.new('RGB', img_original.size, (255, 255, 255))
+                
+                # Paste image on white background
+                background.paste(img_original, (0, 0), img_original)
+                
+                # Convert to grayscale
+                img_l = background.convert('L')
+            
+            else:
+                
+                # Convert to grayscale
+                img_l = img_original.convert('L')
+            
+            # Calculate scaling factor
+            w_percent = (target_width / float(img_l.size[0]))
+            
+            # Calculate height
+            h_size = int((float(img_l.size[1]) * float(w_percent)))
+            
+            # Resize image
+            return img_l.resize((target_width, h_size), Image.Resampling.LANCZOS)
+    
+    except Exception as e:
+        pass
+    
+    return None
+
+def get_logo(url, target_width = 160):
+    """Downloads and converts logo."""
+    try:
+        
+        # Send request
+        res = requests.get(url, timeout = 5)
+        
+        # Check if request was successful
+        if res.status_code == 200:
+            
             # Convert SVG to PNG
             png_data = resvg_py.svg_to_bytes(res.text)
             
@@ -89,6 +149,7 @@ def get_logo(url, target_width = 160):
                 
                 # Convert to grayscale
                 img_l = background.convert('L')
+            
             else:
                 
                 # Convert to grayscale
@@ -102,8 +163,10 @@ def get_logo(url, target_width = 160):
             
             # Resize image
             return img_l.resize((target_width, h_size), Image.Resampling.LANCZOS)
+    
     except Exception:
         pass
+    
     return None
 
 def draw_weather_icon(draw, x, y, condition_code):
@@ -177,6 +240,7 @@ def get_weather(is_preview):
             "abs_min": w_data['mintempC'],                         # Minimum temperature
             "abs_max": w_data['maxtempC']                          # Maximum temperature
         }
+    
     except Exception:
         return None
 
@@ -198,6 +262,7 @@ def get_events(urls_dict, target_date):
                     'end': e.end.replace(tzinfo = None),
                     'summary': e.summary
                 })
+        
         except Exception:
             pass
     
@@ -223,6 +288,7 @@ def get_tasks():
         
         # Return tasks
         return all_tasks[:MAX_TASKS]
+    
     except Exception:
         return []
 
@@ -238,6 +304,7 @@ def get_news():
         
         # Return headlines
         return [textwrap.wrap(item.find('title').text, width = CHAR_WIDTH) for item in root.findall('./channel/item')[:MAX_NEWS]]
+    
     except Exception:
         return [["Nachrichten nicht verfügbar"]]
 
@@ -253,8 +320,10 @@ def get_fact():
         
         # Return fact
         return textwrap.wrap(f"{r.json()['text']}", width = CHAR_WIDTH)
+    
     except Exception:
         return []
+
 
 def get_vocabs(vault_path, count = 5):
     """Fetches random vocabularies."""
@@ -285,8 +354,10 @@ def get_vocabs(vault_path, count = 5):
                     if "|" in front or ">>" in front or "tags:" in front:
                         continue
                     all_cards.append({"front": front, "back": back})
+        
         except Exception:
             pass
+    
     if not all_cards:
         return []
     
@@ -327,7 +398,7 @@ news_h = sum(len(h) for h in news) * 32 + (len(news) * 15) + 100
 fact_h = (len(fact) * 30 + 110) if fact else 0
 
 # (7) Vocabs
-vocabs_h = (len(vocabs) * 65 + 100) if vocab else 0
+vocabs_h = (len(vocabs) * 65 + 100) if vocabs else 0
 
 # Total height
 total_h = header_h + weather_h + calendar_h + task_h + news_h + fact_h + vocabs_h + 200
@@ -354,7 +425,7 @@ except:
 
 # Set y_cursor and MARGIN
 y_cursor = 20
-MARGIN = 40
+MARGIN   = 40
 
 # (1) Header
 if logo_img:
@@ -363,17 +434,49 @@ if logo_img:
     img.paste(logo_img, ((WIDTH - logo_img.size[0]) // 2, y_cursor))
     y_cursor += logo_img.size[1] + 20
     
-    # Define pseudo logs
+    # Define logs
     logs = [
-        "SYSTEM: initializing daily brief ...",
-        "FETCH:  weather ... OK",
-        f"FETCH:  events ... OK ({len(evs)} found)",
-        f"FETCH:  tasks ... OK ({len(tasks)} found)",
-        "FETCH:  news ... OK",
-        "FETCH:  fact ... OK",
-        "FETCH:  vocabularies ... OK",
-        "STATUS: daily brief complete"
+        "SYSTEM: initializing daily brief ..."
     ]
+    
+    # Check weather status
+    logs.append("FETCH:  weather ... OK" if w else "FETCH:  weather ... FAILED")
+    
+    # Check events status
+    if evs:
+        logs.append(f"FETCH:  events ... OK ({len(evs)} found)")
+    
+    else:
+        logs.append("FETCH:  events ... NONE")
+    
+    # Check tasks status
+    if tasks:
+        logs.append(f"FETCH:  tasks ... OK ({len(tasks)} found)")
+    
+    else:
+        logs.append("FETCH:  tasks ... NONE")
+    
+    # Check news status
+    if news and not (len(news) == 1 and "nicht verfügbar" in news[0][0]):
+        logs.append(f"FETCH:  news ... OK")
+    
+    else:
+        logs.append("FETCH:  news ... FAILED")
+    
+    # Check fact status
+    logs.append("FETCH:  fact ... OK" if fact else "FETCH:  fact ... FAILED")
+    
+    # Check vocabularies status
+    if vocabs:
+        logs.append(f"FETCH:  vocabularies ... OK")
+    
+    else:
+        logs.append("FETCH:  vocabularies ... NONE")
+    
+    # Append completion
+    logs.extend([
+        "STATUS: daily brief complete"
+    ])
     
     # Draw pseudo logs
     for log in logs:
@@ -396,7 +499,7 @@ if w:
     
     # Draw icon and midday temperature
     draw_weather_icon(draw, WIDTH - 110, y_cursor - 70, w['code'])
-    draw.text((WIDTH - 70, y_cursor + 25), f"{w['temp']}°C", font = f_bold, fill = 0, anchor = "ms")
+    draw.text((WIDTH - 70, y_cursor + 40), f"{w['temp']}°C", font = f_bold, fill = 0, anchor = "ms")
     
     # Draw temperature line graph
     gy, gw, gh = y_cursor + 90, 360, 80
@@ -422,7 +525,7 @@ if w:
     
     # Draw rain bar chart
     ry = gy + 160
-    draw.text((MARGIN + 40, ry - 25), f"Regen • {w['desc']}", font = f_small, fill = 0)
+    draw.text((MARGIN + 40, ry - 25), f"Regenwahrscheinlichkeit • {w['desc']}", font = f_small, fill = 0)
     
     # Draw aid lines
     for prob_line in [0, 50, 100]:
@@ -453,11 +556,13 @@ if evs:
         time_str = f"{e['start'].strftime('%H:%M')}"
         draw.text((MARGIN, y_cursor), time_str, font = f_small, fill = 0)
         wrapped_summary = textwrap.wrap(e['summary'], width = 24)
+        
         for i, line in enumerate(wrapped_summary):
             draw.text((MARGIN + 80, y_cursor - 4), line, font = f_bold, fill = 0)
             y_cursor += 32
         y_cursor += 15
     y_cursor += 20
+
 else:
     
     # Draw section header and divider line
@@ -470,7 +575,58 @@ else:
     y_cursor += 45
     y_cursor += 20
 
-# (4) Vocabs
+# (4) Tasks, (5) News, and (6) Fact
+for title, data in [("AUFGABEN", tasks), ("NACHRICHTEN", news), ("WUSSTEST DU SCHON?", [fact] if fact else [])]:
+    
+    # Skip news and fact if empty
+    if not data and title != "AUFGABEN":
+        continue
+    
+    # Draw section header and divider line
+    draw.line((MARGIN, y_cursor, WIDTH - MARGIN, y_cursor), fill = 0, width = 3)
+    draw.text((MARGIN, y_cursor + 20), title, font = f_bold, fill = 0)
+    y_cursor += 65
+    
+    if data:
+        for item in data:
+            
+            # Draw tasks
+            if title == "AUFGABEN":
+                draw.rectangle([MARGIN, y_cursor, MARGIN + 20, y_cursor + 20], outline = 0, width = 2)
+                wrapped_task = textwrap.wrap(item['name'], width = 30)
+                
+                for line in wrapped_task:
+                    draw.text((MARGIN + 35, y_cursor - 2), line, font = f_reg, fill = 0)
+                    y_cursor += 32
+                
+                if item['project']:
+                    wrapped_project = textwrap.wrap(item['project'].upper(), width = 35)
+                    
+                    for line in wrapped_project:
+                        draw.text((MARGIN + 35, y_cursor - 6), line, font = f_small, fill = 0)
+                        y_cursor += 24
+                    y_cursor += 15
+                
+                else:
+                    y_cursor += 10
+            
+            # Draw news and fact
+            else:
+                for i, line in enumerate(item):
+                    draw.text((MARGIN, y_cursor), f"{'• ' if i == 0 else '  '}{line}", font = f_reg, fill = 0)
+                    y_cursor += 30
+                y_cursor += 10
+    
+    # Draw fallback text
+    else:
+        if title == "AUFGABEN":
+            draw.text((MARGIN, y_cursor), "• Heute keine Aufgaben", font = f_reg, fill = 0)
+            y_cursor += 45
+    
+    # Add spacing
+    y_cursor += 20
+
+# (7) Vocabs
 if vocabs:
     
     # Draw section header and divider line
@@ -492,52 +648,11 @@ if vocabs:
     # Add spacing
     y_cursor += 20
 
-# (5) Tasks, (6) News, and (7) Fact
-for title, data in [("AUFGABEN", tasks), ("NACHRICHTEN", news), ("WUSSTEST DU SCHON?", [fact] if fact else [])]:
-    
-    # Skip news and fact if empty
-    if not data and title != "AUFGABEN":
-        continue
-    
-    # Draw section header and divider line
-    draw.line((MARGIN, y_cursor, WIDTH - MARGIN, y_cursor), fill = 0, width = 3)
-    draw.text((MARGIN, y_cursor + 20), title, font = f_bold, fill = 0)
-    y_cursor += 65
-    
-    if data:
-        for item in data:
-            
-            # Draw tasks
-            if title == "AUFGABEN":
-                draw.rectangle([MARGIN, y_cursor, MARGIN + 20, y_cursor + 20], outline = 0, width = 2)
-                wrapped_task = textwrap.wrap(item['name'], width = 30)
-                for line in wrapped_task:
-                    draw.text((MARGIN + 35, y_cursor - 2), line, font = f_reg, fill = 0)
-                    y_cursor += 32
-                if item['project']:
-                    wrapped_project = textwrap.wrap(item['project'].upper(), width = 35)
-                    for line in wrapped_project:
-                        draw.text((MARGIN + 35, y_cursor - 6), line, font = f_small, fill = 0)
-                        y_cursor += 24
-                    y_cursor += 15
-                else:
-                    y_cursor += 10
-            
-            # Draw news and fact
-            else:
-                for i, line in enumerate(item):
-                    draw.text((MARGIN, y_cursor), f"{'• ' if i == 0 else '  '}{line}", font = f_reg, fill = 0)
-                    y_cursor += 30
-                y_cursor += 10
-    
-    # Draw fallback text
-    else:
-        if title == "AUFGABEN":
-            draw.text((MARGIN, y_cursor), "• Heute keine Aufgaben", font = f_reg, fill = 0)
-            y_cursor += 45
-    
-    # Add spacing
-    y_cursor += 20
+# Add spacing
+y_cursor += 20
+
+# Crop image at final cursor position
+img = img.crop((0, 0, WIDTH, int(y_cursor)))
 
 # Convert image to 1-bit
 final_img = img.convert('1')
@@ -559,5 +674,6 @@ final_img.save(FILENAME)
 try:
     subprocess.run(["lp", "-d", PRINTER_NAME, "-o", "media=Custom.80x2000mm", FILENAME], check = True)
     print("Druck gesendet")
+
 except Exception as e:
     print(f"Fehler beim Drucken: {e}")
