@@ -26,7 +26,7 @@ import resvg_py
 #################
 
 # Set mode
-PREVIEW_MODE = True
+PREVIEW_MODE = False
 
 # Set folder
 # SCRIPT_DIR = os.getcwd()
@@ -324,7 +324,6 @@ def get_fact():
     except Exception:
         return []
 
-
 def get_vocabs(vault_path, count = 5):
     """Fetches random vocabularies."""
     all_cards = []
@@ -337,8 +336,8 @@ def get_vocabs(vault_path, count = 5):
             with open(file_path, "r", encoding = "utf-8") as f:
                 content = f.read()
             
-            # Check if the file contains the tag "Vokabeln_Altgriechisch"
-            if "Vokabeln_Altgriechisch" not in content:
+            # Check if the file contains the tag "Vokabeln_Englisch"
+            if "Vokabeln_Englisch" not in content:
                 continue
             
             # Clean and split content into non-empty lines
@@ -365,9 +364,9 @@ def get_vocabs(vault_path, count = 5):
     return random.sample(all_cards, min(count, len(all_cards)))
 
 
-########################################
-# DATA LOADING  AND HEIGHT CALCULATION #
-########################################
+#######################################
+# DATA LOADING AND HEIGHT CALCULATION #
+#######################################
 
 # Execute functions and store results in variables
 logo_img = get_logo(LOGO_URL, target_width = 160)
@@ -377,6 +376,29 @@ tasks    = get_tasks()
 news     = get_news()
 fact     = get_fact()
 vocabs   = get_vocabs(OBSIDIAN_VAULT, count = 5)
+
+# Define routine for weekdays
+is_weekday = target_date.weekday() < 5
+routine_tasks = [
+    {"name": "Forschung", "project": "", "frame": True},
+    {"name": "Schreiben", "project": "", "frame": True},
+    {"name": "Lesen", "project": ""},
+    {"name": "Lernen", "project": ""},
+    {"name": "Projekt", "project": ""},
+    {"name": "Haushalt", "project": ""},
+    {"name": "Organisatorisches", "project": "", "boxes": 5}
+] if is_weekday else []
+
+# Define notes for routine
+routine_notes = [
+    "• »Forschung« oder »Schreiben« zuerst",
+    "• Maximal fünf Pomodoros »Organisatorisches«"
+]
+
+# Define notes for tasks
+tasks_notes = [
+    "• Wähle drei"
+]
 
 # Calculate canvas height
 # (1) Header
@@ -388,20 +410,23 @@ weather_h = 480 if w else 0
 # (3) Calendar
 calendar_h = (len(evs) * 70 + 80) if evs else 125
 
-# (4) Tasks
-task_h = sum([55 if t['project'] else 40 for t in tasks]) + 100 if tasks else 0
+# (4) Routine
+routine_h = (len(routine_tasks) * 55 + len(routine_notes) * 24 + 112) if routine_tasks else 0
 
-# (5) News
+# (5) Tasks
+task_h = (sum([55 if t['project'] else 40 for t in tasks]) + len(tasks_notes) * 24 + 112) if tasks else 0
+
+# (6) News
 news_h = sum(len(h) for h in news) * 32 + (len(news) * 15) + 100
 
-# (6) Fact
+# (7) Fact
 fact_h = (len(fact) * 30 + 110) if fact else 0
 
-# (7) Vocabs
-vocabs_h = (len(vocabs) * 65 + 100) if vocabs else 0
+# (8) Vocabs
+vocabs_h = (sum([len(textwrap.wrap(c['front'], width = 28)) * 30 + len(textwrap.wrap(c['back'], width = 32)) * 30 + 5 for c in vocabs]) + 100) if vocabs else 0
 
 # Total height
-total_h = header_h + weather_h + calendar_h + task_h + news_h + fact_h + vocabs_h + 200
+total_h = header_h + weather_h + calendar_h + routine_h + task_h + news_h + fact_h + vocabs_h + 200
 
 
 ###########
@@ -473,12 +498,14 @@ if logo_img:
     else:
         logs.append("FETCH:  vocabularies ... NONE")
     
-    # Append completion
+    # Append completion and greeting
     logs.extend([
-        "STATUS: daily brief complete"
+        "STATUS: daily brief complete",
+        "GREET:  Good morning,",
+        "        have a wonderful start of the day."
     ])
     
-    # Draw pseudo logs
+    # Draw logs
     for log in logs:
         draw.text((MARGIN, y_cursor), log, font = f_mono, fill = 0)
         y_cursor += 22
@@ -575,11 +602,26 @@ else:
     y_cursor += 45
     y_cursor += 20
 
-# (4) Tasks, (5) News, and (6) Fact
-for title, data in [("AUFGABEN", tasks), ("NACHRICHTEN", news), ("WUSSTEST DU SCHON?", [fact] if fact else [])]:
+# (4) Routine, (5) Tasks, (6) News, and (7) Fact
+# Define headings for routine and tasks
+routine_heading = "TÄGLICHE ROUTINE"
+tasks_heading = "AUFGABEN"
+
+# Define sequence of sections
+sections = []
+if is_weekday:
+    sections.append((routine_heading, routine_tasks))
+sections.extend([
+    ("AUFGABEN", tasks),
+    ("NACHRICHTEN", news),
+    ("WUSSTEST DU SCHON?", [fact] if fact else [])
+])
+
+# Iterate through sections
+for title, data in sections:
     
     # Skip news and fact if empty
-    if not data and title != "AUFGABEN":
+    if not data and title != tasks_heading and title != routine_heading:
         continue
     
     # Draw section header and divider line
@@ -587,19 +629,38 @@ for title, data in [("AUFGABEN", tasks), ("NACHRICHTEN", news), ("WUSSTEST DU SC
     draw.text((MARGIN, y_cursor + 20), title, font = f_bold, fill = 0)
     y_cursor += 65
     
+    # Draw notes below section heading
+    notes = routine_notes if title == routine_heading else tasks_notes if title == tasks_heading else []
+    for note in notes:
+        draw.text((MARGIN, y_cursor - 6), note, font = f_small, fill = 0)
+        y_cursor += 24
+    if notes:
+        y_cursor += 12
+    
     if data:
         for item in data:
             
             # Draw tasks
-            if title == "AUFGABEN":
-                draw.rectangle([MARGIN, y_cursor, MARGIN + 20, y_cursor + 20], outline = 0, width = 2)
+            if title == tasks_heading or title == routine_heading:
+                
+                # Draw checkboxes
+                n_boxes = item.get('boxes', 1)
+                for b in range(n_boxes):
+                    x = MARGIN + b * 30
+                    draw.rectangle([x, y_cursor, x + 20, y_cursor + 20], outline = 0, width = 2)
+                
+                # Draw frame around checkboxes
+                if item.get('frame'):
+                    draw.rectangle([MARGIN - 5, y_cursor - 5, MARGIN + 25, y_cursor + 25], outline = 0, width = 1)
+                
+                text_x = MARGIN + 35 + (n_boxes - 1) * 30
                 wrapped_task = textwrap.wrap(item['name'], width = 30)
                 
                 for line in wrapped_task:
-                    draw.text((MARGIN + 35, y_cursor - 2), line, font = f_reg, fill = 0)
+                    draw.text((text_x, y_cursor - 2), line, font = f_reg, fill = 0)
                     y_cursor += 32
                 
-                if item['project']:
+                if item.get('project'):
                     wrapped_project = textwrap.wrap(item['project'].upper(), width = 35)
                     
                     for line in wrapped_project:
@@ -619,7 +680,7 @@ for title, data in [("AUFGABEN", tasks), ("NACHRICHTEN", news), ("WUSSTEST DU SC
     
     # Draw fallback text
     else:
-        if title == "AUFGABEN":
+        if title == tasks_heading:
             draw.text((MARGIN, y_cursor), "• Heute keine Aufgaben", font = f_reg, fill = 0)
             y_cursor += 45
     
@@ -638,12 +699,15 @@ if vocabs:
     for card in vocabs:
         
         # Draw original
-        draw.text((MARGIN, y_cursor), f"• {card['front']}", font = f_bold, fill = 0)
-        y_cursor += 30
+        for i, line in enumerate(textwrap.wrap(card['front'], width = 28)):
+            draw.text((MARGIN + (0 if i == 0 else 25), y_cursor), f"{'• ' if i == 0 else ''}{line}", font = f_bold, fill = 0)
+            y_cursor += 30
         
         # Draw translation
-        draw.text((MARGIN + 25, y_cursor), f"= {card['back']}", font = f_reg, fill = 0)
-        y_cursor += 35
+        for i, line in enumerate(textwrap.wrap(card['back'], width = 32)):
+            draw.text((MARGIN + 25, y_cursor), f"{'= ' if i == 0 else '   '}{line}", font = f_reg, fill = 0)
+            y_cursor += 30
+        y_cursor += 5
     
     # Add spacing
     y_cursor += 20
